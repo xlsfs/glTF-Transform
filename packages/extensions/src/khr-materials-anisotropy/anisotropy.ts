@@ -24,7 +24,7 @@ const { R, G, B } = TextureChannel;
 /**
  * # Anisotropy
  *
- * Defines anisotropy (thin film interference) on a PBR {@link Material}. See {@link MaterialsAnisotropy}.
+ * Defines anisotropy (directionally-dependent reflections) on a PBR {@link Material}. See {@link MaterialsAnisotropy}.
  */
 export class Anisotropy extends ExtensionProperty<IAnisotropy> {
 	public static EXTENSION_NAME = KHR_MATERIALS_ANISOTROPY;
