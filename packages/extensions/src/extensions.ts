@@ -5,6 +5,7 @@ import { MeshoptCompression } from './ext-meshopt-compression';
 import { TextureWebP } from './ext-texture-webp';
 import { DracoMeshCompression } from './khr-draco-mesh-compression';
 import { LightsPunctual } from './khr-lights-punctual';
+import { MaterialsAnisotropy } from './khr-materials-anisotropy';
 import { MaterialsClearcoat } from './khr-materials-clearcoat';
 import { MaterialsEmissiveStrength } from './khr-materials-emissive-strength';
 import { MaterialsIOR } from './khr-materials-ior';
@@ -24,6 +25,7 @@ import { XMP } from './khr-xmp-json-ld';
 export const KHRONOS_EXTENSIONS = [
 	DracoMeshCompression,
 	LightsPunctual,
+	MaterialsAnisotropy,
 	MaterialsClearcoat,
 	MaterialsEmissiveStrength,
 	MaterialsIOR,
