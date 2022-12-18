@@ -1,8 +1,8 @@
 import { Extension, GLTF, MathUtils, ReaderContext, vec3, WriterContext } from '@gltf-transform/core';
-import { KHR_MATERIALS_IRIDESCENCE } from '../constants';
+import { KHR_MATERIALS_ANISOTROPY } from '../constants';
 import { Anisotropy } from './anisotropy';
 
-const NAME = KHR_MATERIALS_IRIDESCENCE;
+const NAME = KHR_MATERIALS_ANISOTROPY;
 
 interface AnisotropyDef {
 	anisotropyFactor: number;
