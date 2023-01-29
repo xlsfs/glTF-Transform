@@ -187,8 +187,17 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 
 	logger.debug(`${NAME}: Tolerance thresholds: ${formatKV(attributeTolerance)}`);
 
+	// (2) Compare and identify vertices to weld.
+
 	const posA: vec3 = [0, 0, 0];
 	const posB: vec3 = [0, 0, 0];
+
+	// TODO(test): Currently has no effect?
+	uniqueIndices.sort((a, b) => {
+		srcPosition.getElement(a, posA);
+		srcPosition.getElement(b, posB);
+		return posA[0] > posB[0] ? 1 : -1;
+	});
 
 	const grid = {} as Record<string, number[]>;
 
