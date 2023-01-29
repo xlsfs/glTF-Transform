@@ -133,8 +133,8 @@ test('@gltf-transform/functions::weld | attributes', async (t) => {
 		Array.from(prim.getIndices()!.getArray()!),
 		[
 			0, 0, 0,
-			3, 3, 4,
-			1, 2, 2,
+			1, 1, 2,
+			3, 4, 4,
 		],
 		'indices'
 	);
@@ -143,10 +143,10 @@ test('@gltf-transform/functions::weld | attributes', async (t) => {
 		Array.from(prim.getAttribute('POSITION')!.getArray()!),
 		[
 			0, 0, 0,
-			0, 1, 1,
-			0, 1, 1,
 			1, 0, 0,
 			1, 0, 0,
+			0, 1, 1,
+			0, 1, 1,
 		],
 		'position'
 	);
@@ -155,10 +155,10 @@ test('@gltf-transform/functions::weld | attributes', async (t) => {
 		Array.from(prim.getAttribute('NORMAL')!.getArray()!),
 		[
 			63, 63, 0,
-			63, 0, 63,
-			63, 0, 63,
 			0, 63, 64,
 			0, -63, 63,
+			63, 0, 63,
+			63, 0, 63,
 		],
 		'normal'
 	);
@@ -167,10 +167,10 @@ test('@gltf-transform/functions::weld | attributes', async (t) => {
 		Array.from(prim.getAttribute('COLOR_0')!.getArray()!),
 		[
 			255, 0, 0, 1,
+			0, 255, 0, 1,
+			0, 255, 0, 1,
 			0, 0, 200, 1,
 			0, 0, 255, 1,
-			0, 255, 0, 1,
-			0, 255, 0, 1,
 		],
 		'color'
 	);

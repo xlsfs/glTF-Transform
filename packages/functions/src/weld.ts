@@ -12,6 +12,35 @@ import {
 import { dedup } from './dedup';
 import { createIndices, createTransform, formatDeltaOp, isTransformPending } from './utils';
 
+// DEVELOPER NOTES: The vertex welding function has been difficult to make both
+// fast and robust / tunable. The writeup below tracks my attempts to solve for
+// those constraints.
+//
+// (Approach #1) Follow the mergeVertices() implementation of three.js,
+// hashing vertices with a string concatenation of all vertex attributes.
+// The approach does not allow per-attribute tolerance in local units.
+//
+// (Approach #2) Sort points along the X axis, then make cheaper
+// searches up/down the sorted list for merge candidates. While this allows
+// simpler comparison based on specified tolerance, it's much slower, even
+// for cases where choice of the X vs. Y or Z axes is reasonable.
+//
+// (Approach #3) Attempted a Delaunay triangulation in three dimensions,
+// expecting it would be an n * log(n) algorithm, but the only implementation
+// I found (with delaunay-triangulate) appeared to be much slower than that,
+// and was notably slower than the sort-based approach, just building the
+// Delaunay triangulation alone.
+//
+// (Approach #4) Hybrid of (1) and (2), assigning vertices to a spatial
+// grid, then searching the local neighborhood (27 cells) for weld candidates.
+//
+// RESULTS: For the "Lovecraftian" sample model, after joining, a primitive
+// with 873,000 vertices can be welded down to 230,000 vertices. Results:
+// - (1) Not tested, but prior results suggest not robust enough.
+// - (2) 30 seconds
+// - (3) 660 seconds
+// - (4) 13 seconds
+
 const NAME = 'weld';
 
 const Tolerance = {
@@ -143,7 +172,7 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 	const srcIndices = prim.getIndices() || doc.createAccessor().setArray(createIndices(srcPosition.getCount()));
 	const uniqueIndices = new Uint32Array(new Set(srcIndices.getArray()!));
 
-	// (1) Compute per-attribute tolerances, pre-sort vertices.
+	// (1) Compute per-attribute tolerances and spatial grid for vertices.
 
 	const tolerance = Math.max(options.tolerance, Number.EPSILON);
 	const attributeTolerance: Record<string, number> = {};
@@ -157,11 +186,14 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 	const posA: vec3 = [0, 0, 0];
 	const posB: vec3 = [0, 0, 0];
 
-	uniqueIndices.sort((a, b) => {
-		srcPosition.getElement(a, posA);
-		srcPosition.getElement(b, posB);
-		return posA[0] > posB[0] ? 1 : -1;
-	});
+	const grid = {} as Record<string, number[]>;
+
+	for (let i = 0; i < uniqueIndices.length; i++) {
+		srcPosition.getElement(uniqueIndices[i], posA);
+		const key = getGridKey(posA[0], posA[1], posA[2], attributeTolerance.POSITION);
+		grid[key] = grid[key] || [];
+		grid[key].push(uniqueIndices[i]);
+	}
 
 	// (2) Compare and identify vertices to weld. Use sort to keep iterations below O(n²),
 
@@ -170,41 +202,39 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 
 	const srcVertexCount = srcPosition.getCount();
 	let dstVertexCount = 0;
-	let backIters = 0;
+	let searchIters = 0;
 
 	for (let i = 0; i < uniqueIndices.length; i++) {
 		const a = uniqueIndices[i];
+		srcPosition.getElement(a, posA);
 
-		for (let j = i - 1; j >= 0; j--) {
-			const b = weldMap[uniqueIndices[j]];
+		for (const cellKey of getGridNeighborhoodKeys(posA[0], posA[1], posA[2], attributeTolerance.POSITION)) {
+			if (!grid[cellKey]) continue;
 
-			srcPosition.getElement(a, posA);
-			srcPosition.getElement(b, posB);
+			for (const j of grid[cellKey]) {
+				const b = weldMap[j];
+				srcPosition.getElement(b, posB);
 
-			// Sort order allows early exit on X-axis distance.
-			if (Math.abs(posA[0] - posB[0]) > attributeTolerance['POSITION']) {
-				break;
-			}
+				searchIters++;
 
-			backIters++;
-
-			// Weld if base attributes and morph target attributes match.
-			const isBaseMatch = prim.listSemantics().every((semantic) => {
-				const attribute = prim.getAttribute(semantic)!;
-				const tolerance = attributeTolerance[semantic];
-				return compareAttributes(attribute, a, b, tolerance, semantic);
-			});
-			const isTargetMatch = prim.listTargets().every((target) => {
-				return target.listSemantics().every((semantic) => {
-					const attribute = target.getAttribute(semantic)!;
+				// Weld if base attributes and morph target attributes match.
+				const isBaseMatch = prim.listSemantics().every((semantic) => {
+					const attribute = prim.getAttribute(semantic)!;
 					const tolerance = attributeTolerance[semantic];
 					return compareAttributes(attribute, a, b, tolerance, semantic);
 				});
-			});
+				const isTargetMatch = prim.listTargets().every((target) => {
+					return target.listSemantics().every((semantic) => {
+						const attribute = target.getAttribute(semantic)!;
+						const tolerance = attributeTolerance[semantic];
+						return compareAttributes(attribute, a, b, tolerance, semantic);
+					});
+				});
 
-			if (isBaseMatch && isTargetMatch) {
-				weldMap[a] = b;
-				break;
+				if (isBaseMatch && isTargetMatch) {
+					weldMap[a] = b;
+					break;
+				}
 			}
 		}
 
@@ -216,7 +246,7 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 		}
 	}
 
-	logger.debug(`${NAME}: Iterations per vertex: ${Math.round(backIters / uniqueIndices.length)} (avg)`);
+	logger.debug(`${NAME}: Iterations per vertex: ${Math.round(searchIters / uniqueIndices.length)} (avg)`);
 	logger.debug(`${NAME}: ${formatDeltaOp(srcVertexCount, dstVertexCount)} vertices.`);
 
 	// (3) Update indices.
@@ -307,4 +337,24 @@ function formatKV(kv: Record<string, unknown>): string {
 	return Object.entries(kv)
 		.map(([k, v]) => `${k}=${v}`)
 		.join(', ');
+}
+
+function getGridNeighborhoodKeys(x: number, y: number, z: number, cellSize: number): string[] {
+	const keys = [] as string[];
+	const hc = cellSize / 2;
+	for (let i = -1; i <= 1; i++) {
+		for (let j = -1; j <= 1; j++) {
+			for (let k = -1; k <= 1; k++) {
+				keys.push(getGridKey(x + i * hc, y + j * hc, z + k * hc, cellSize));
+			}
+		}
+	}
+	return keys;
+}
+
+function getGridKey(x: number, y: number, z: number, cellSize: number): string {
+	const cellX = Math.fround(x * Math.round(x / cellSize));
+	const cellY = Math.fround(y * Math.round(y / cellSize));
+	const cellZ = Math.fround(z * Math.round(z / cellSize));
+	return cellX + ':' + cellY + ':' + cellZ;
 }
