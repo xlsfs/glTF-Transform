@@ -340,6 +340,9 @@ function formatKV(kv: Record<string, unknown>): string {
 }
 
 function getGridNeighborhoodKeys(x: number, y: number, z: number, cellSize: number): string[] {
+	// It's generally true that only 18/27 of these keys are unique, but
+	// removing the redundant keys here (in a very hot loop) seems to
+	// cost more than it saves.
 	const keys = [] as string[];
 	const hc = cellSize / 2;
 	for (let i = -1; i <= 1; i++) {
