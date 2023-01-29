@@ -58,11 +58,13 @@ export interface WeldOptions {
 	tolerance?: number;
 	/** Whether to overwrite existing indices. */
 	overwrite?: boolean;
+	exhaustive?: boolean;
 }
 
 export const WELD_DEFAULTS: Required<WeldOptions> = {
 	tolerance: Tolerance.DEFAULT,
 	overwrite: true,
+	exhaustive: false,
 };
 
 /**
@@ -168,6 +170,8 @@ function _indexPrimitive(doc: Document, prim: Primitive): void {
 function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOptions>): void {
 	const logger = doc.getLogger();
 
+	console.time('weldPrimitive');
+
 	const srcPosition = prim.getAttribute('POSITION')!;
 	const srcIndices = prim.getIndices() || doc.createAccessor().setArray(createIndices(srcPosition.getCount()));
 	const uniqueIndices = new Uint32Array(new Set(srcIndices.getArray()!));
@@ -195,7 +199,7 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 		grid[key].push(uniqueIndices[i]);
 	}
 
-	// (2) Compare and identify vertices to weld. Use sort to keep iterations below O(n²),
+	// (2) Compare and identify vertices to weld.
 
 	const weldMap = createIndices(uniqueIndices.length); // oldIndex → oldCommonIndex
 	const writeMap = createIndices(uniqueIndices.length); // oldIndex → newIndex
@@ -208,7 +212,11 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 		const a = uniqueIndices[i];
 		srcPosition.getElement(a, posA);
 
-		for (const cellKey of getGridNeighborhoodKeys(posA[0], posA[1], posA[2], attributeTolerance.POSITION)) {
+		const cellKeys = options.exhaustive
+			? getGridNeighborhoodKeys(posA[0], posA[1], posA[2], attributeTolerance.POSITION)
+			: [getGridKey(posA[0], posA[1], posA[2], attributeTolerance.POSITION)];
+
+		cell: for (const cellKey of cellKeys) {
 			if (!grid[cellKey]) continue;
 
 			for (const j of grid[cellKey]) {
@@ -233,14 +241,14 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 
 				if (isBaseMatch && isTargetMatch) {
 					weldMap[a] = b;
-					break;
+					break cell;
 				}
 			}
 		}
 
 		// Output the vertex if we didn't find a match, else record the index of the match.
 		if (weldMap[a] === a) {
-			writeMap[a] = dstVertexCount++; // note: reorders the primitive on x-axis sort.
+			writeMap[a] = dstVertexCount++;
 		} else {
 			writeMap[a] = writeMap[weldMap[a]];
 		}
@@ -269,6 +277,8 @@ function _weldPrimitive(doc: Document, prim: Primitive, options: Required<WeldOp
 			swapAttributes(target, srcAttr, writeMap, dstVertexCount);
 		}
 	}
+
+	console.timeEnd('weldPrimitive');
 }
 
 /** Creates a new TypedArray of the same type as an original, with a new length. */
@@ -340,11 +350,10 @@ function formatKV(kv: Record<string, unknown>): string {
 }
 
 function getGridNeighborhoodKeys(x: number, y: number, z: number, cellSize: number): string[] {
-	// It's generally true that only 18/27 of these keys are unique, but
-	// removing the redundant keys here (in a very hot loop) seems to
-	// cost more than it saves.
+	// Probably only 18/27 of these keys are unique, but removing the redundant
+	// keys here (in a very hot loop) seems to cost more than it saves.
 	const keys = [] as string[];
-	const hc = cellSize / 2;
+	const hc = cellSize;
 	for (let i = -1; i <= 1; i++) {
 		for (let j = -1; j <= 1; j++) {
 			for (let k = -1; k <= 1; k++) {
